@@ -1,0 +1,1228 @@
+<?php
+/**
+ * 学生学习单词类
+ * xulinjie
+ * 2016.05.16
+ */
+namespace Home\Model;
+
+
+use Home\Model\Word;                                        // 前台单词类，用来实例化向前台传
+use StudentCourseProcess\Logic\StudentCourseProcessLogic;
+use Test\Model\TestModel;                                   // 测试记录
+use Word\Logic\WordLogic;                                   // 单词表，用来取新学的下一个单词
+use Login\Logic\LoginLogic;                                 // 登陆
+use NewWord\Logic\NewWordLogic;                             // 生词表，用来取下一个生词
+use TestPercent\Model\TestPercentModel;                     // 测试百分比
+use TestPercent\Logic\TestPercentLogic;                     // 测试百分比表，用来取下一阶段百分比
+use StudentWord\Model\StudentWordModel;                     // 学习复习单词的记录表
+use RepeatTimes\Logic\RepeatTimesLogic;                     // 重复次数表，用来取需要复习的单词和存重复次数
+use WordProgress\Logic\WordProgressLogic;                   // 单词进度表，用来存学生单词进度
+use StudentWordView\Model\StudentWordViewModel;             // 学生复习单词节点记录表
+use RepeatTimesWordView\Logic\RepeatTimesWordViewLogic;     // 重复次数单词视图，用来取同一课程的复习单词
+use StudentWordStudyList\Model\StudentWordStudyListModel;   // 学生当前学习记录表（记录用户需要重复进行学习的单词）
+use StudentWordStudyNode\Model\StudentWordStudyNodeModel;   // 学生当前学习的节点记录。记录学习的进度
+use StudentWordReviewNode\Model\StudentWordReviewNodeModel; // 学生当前复习的节点记录。记录复习的进度
+use WordProgressLoginView\Logic\WordProgressLoginViewLogic; // 学生单词进度
+use StudentWordReviewList\Model\StudentWordReviewListModel; // 学生复习单词列表
+use WordProgressLoginWordCourseView\Logic\WordProgressLoginWordCourseViewLogic;
+use StudentWordStudyNodeCourseView\Model\StudentWordStudyNodeCourseViewModel;   // 学生当前学习的节点记录 - 课程视图。记录学习的进度
+
+class StudentCourse{
+    private $Student                = null;
+    private $Course                 = null;
+    private $currentBeginTime       = null;  // 今天学习开始时间
+    private $currentEndTime         = null;  // 今天学习结束时间
+    private $lastBeginTime          = null;  // 上一次学习那天的开始时间
+    private $lastEndTime            = null;  // 上一次学习那天的结束时间
+    private $currentNewWordCount    = null;  // 今天新学单词数f
+    private $currentOldWordCount    = null;  // 今天复习单词数f
+    private $lastNewWordCount       = null;  // 上一次学习那天的新学单词数
+    private $lastOldWordCount       = null;  // 上一次学习那天的复习单词数
+    private $lastStudyTime          = null;  // 上一次学习那天的学习时间
+    private $progressPercent        = null;  // 课程进度
+    private $totalStudyTime         = null;  // 课程有效学习时间
+    private $currentTest            = null;  // 用户当前需要进行的测试
+    private $studingWord            = null;  // 正在学习的单词
+    private $firstUnpassedTest      = null;  // 未通过的首个测试
+    private $isDone                 = null;  // 是否通过了课程的所有测试
+    private $currentReviewWord      = null;  // 当前正在复习的单词
+    private $newStudyWordsCount     = null;  // 新学单词总数
+    private $oldStudyWordsCount     = null;  // 复习单词总数
+    private $learnCounts            = null;  // 学习次数
+    private $firstStudyTime         = null;  // 首次学习时间
+    private $lastTimeCost           = null;  // 上次学习用时(分)
+    private $remainCount            = null;  // 剩余未学习单词数
+
+
+    public function __construct($Student,$Course){
+        $this->Student = $Student;
+        $this->Course = $Course;
+
+        // 计算0点与24点的值
+        $this->currentBeginTime = strtotime(date('Y-m-d',time()));
+        $this->currentEndTime = $this->currentBeginTime + 24*60*60;
+    }
+
+    public function getStudent()
+    {
+        return $this->Student;
+    }
+
+    public function getCourse()
+    {
+        return $this->Course;
+    }
+
+    /**
+     * 今天学习开始时间
+     * xulinjie
+     * @return int
+     */
+    public function getCurrentBeginTime()
+    {
+        return $this->currentBeginTime;
+    }
+
+    /**
+     * 今天学习结束时间
+     * xulinjie
+     * @return int
+     */
+    public function getCurrentEndTime()
+    {
+        return $this->currentEndTime;
+    }
+    
+    /**
+     * 获取课程当前应该进行的测试
+     * @return   Test                   
+     * @author 梦云智 http://www.mengyunzhi.com
+     * @DateTime 2016-11-08T16:46:14+0800
+     */
+    public function getCurrentTest()
+    {
+        if (null === $this->currentTest) {
+            // 给默认值
+            $this->currentTest = new Test(0);
+            // 获取当前新学单词数
+            $newStudyWordsCount = $this->getNewStudyWordsCount();
+
+            // 学生还没有开始学习
+            if (0 === $newStudyWordsCount) {
+                $TestPercentM = new TestPercentModel;
+                //查找学前测, 找到则按条件返回，找不到，则默认没有学前测
+                $map = array();
+                $map['type'] = 0;
+                $map['course_id'] = $this->getCourse()->getId();
+                $list = $TestPercentM->where($map)->find();
+                unset($TestPercentM);
+
+                // 课程设置了学前测
+                if ($list !== null) {
+                    // 查找学生的 学前测 测试信息
+                    $map = array();
+                    $map['test_percent_id'] = $list['id'];
+                    $map['student_id'] = $this->getStudent()->getId();
+                    $TestM = new TestModel;
+                    $test = $TestM->where($map)->find();
+                    unset($TestM);
+
+                    // 学生未进行 学前测 测试
+                    if ($test === null) {
+                        $this->currentTest = new Test($list['id']);
+                    }
+                } 
+
+            // 学生已经开始学习，获取对应的测试
+            } else {
+                // 获取没有通过的测试
+                if ($newStudyWordsCount >= $this->getFirstUnpassedTest()->getPercentWordCount()) {
+                    $this->currentTest = $this->getFirstUnpassedTest();
+                }
+            }
+        }
+
+        return $this->currentTest;
+    }
+
+
+    /**
+     * 获取学生是否完成了该门课程的学习，即是否通过了最后一次考试.
+     * @param  Student $Student 
+     * @return bool
+     * @author panjie
+     * 16.05.31
+     */
+    public function getIsDone()
+    {  
+        if (null === $this->isDone) {
+            $this->isDone = true;
+            // 取当前课程的最大百分比的测试信息
+            $TestPercentM = new TestPercentModel();
+            $map = array();
+            $map['course_id'] = $this->getCourse()->getId();
+            $map['type'] = array('neq', 0);
+            $testPercents = $TestPercentM->where($map)->order('percent desc')->select();
+            unset($TestPercentM);
+
+            // 如果没有增加测试记录，那么我们认为用户直接完成了该门课程的学习
+            if (!empty($testPercents))
+            {
+                // 判断学生是否进行过测试且测试成绩大于规定的成绩
+                $TestM = new TestModel();
+                $map = array();
+                $map['student_id'] = $this->getStudent()->getId();
+
+                // 依次判断学生测试成绩是否大于我们设置的成绩.如果有一次通过，我们则认为学生通过了最后一次测试
+                $passGrade = C('YUNZHI_GRADE') == '' ? 90 : (int)C('YUNZHI_GRADE'); // 通过成绩
+                foreach ($testPercents as $testPercent) {
+                    $map['test_percent_id'] = $testPercent['id'];
+                    $test = $TestM->where($map)->order('grade desc')->find();
+                    if ((null === $test) || ((int)$test['grade'] < $passGrade)) {
+                        $this->isDone = false;
+                    }
+                }
+                unset($TestM);
+            }
+            
+        }
+
+        return $this->isDone;
+    }
+
+    /**
+     * 上一次学习那天的开始时间
+     * xulinjie
+     * @return int
+     */
+    public function getLastBeginTime()
+    {
+        if (null === $this->lastBeginTime)
+        {
+            $WordProgressLoginWordCourseViewLogic = new WordProgressLoginWordCourseViewLogic;
+            $lastBeginTime = $WordProgressLoginWordCourseViewLogic->getLastTimeByCourseIdStudentId($this->Course->getId(), $this->Student->getId());
+            $this->lastBeginTime = $lastBeginTime;
+
+            unset($lastBeginTime);
+            unset($WordProgressLoginWordCourseViewLogic);
+        }
+        
+        return $this->lastBeginTime;
+    }
+    
+    /**
+     * 上一次学习那天的结束时间
+     * xulinjie
+     * @return int
+     */
+    public function getLastEndTime()
+    {
+        if (null === $this->lastEndTime)
+        {
+            $this->lastEndTime = $this->getLastBeginTime() + 24*60*60;
+        }
+                            
+        return (int)$this->lastEndTime;
+    }
+    
+     /**
+     * 课程学习总时间
+     * xulinjie
+     * @return int
+     */
+    public function getTotalStudyTime()
+    {
+        if (is_null($this->totalStudyTime)) {
+            $WordProgressLoginWordCourseViewL = new WordProgressLoginWordCourseViewLogic();
+            $totalStudyTime = $WordProgressLoginWordCourseViewL->getTotalTimeCostByCourseIdStudentId($this->Course->getId(),$this->Student->getId());  
+            $this->totalStudyTime = $totalStudyTime;
+            unset($totalStudyTime);
+            unset($WordProgressLoginWordCourseViewL);
+        }
+
+        return (int)$this->totalStudyTime;
+    }
+    
+    /**
+     * 今天新学单词数
+     * xulinjie
+     * @return int
+     */
+    public function getCurrentNewWordCount()
+    {
+        if ($this->currentNewWordCount === null) {
+            $WordProgressL = new WordProgressLogic();
+            $map = array();
+            $map['is_new'] = 1;
+            $map['course_id'] = $this->Course->getId();
+            $map['student_id'] = $this->Student->getId();
+            $map['time'] = array(array('egt',$this->currentBeginTime), array('lt',$this->currentEndTime));
+
+            $this->currentNewWordCount = (int)$WordProgressL->where($map)->count();
+            unset($WordProgressL);
+        }
+
+        return $this->currentNewWordCount;
+    }
+
+    /**
+     * 今天复习单词数
+     * xulinjie
+     * @return int
+     */
+    public function getCurrentOldWordCount()
+    {
+        if (is_null($this->currentOldWordCount)) {
+            $WordProgressL = new WordProgressLogic();
+            $map = array();
+            $map['is_new'] = 0;
+            $map['course_id'] = $this->Course->getId();
+            $map['student_id'] = $this->Student->getId();
+            $map['time'] = array(array('egt',$this->currentBeginTime), array('lt',$this->currentEndTime));
+
+            $this->currentOldWordCount = (int)$WordProgressL->where($map)->count();
+            unset($WordProgressL);
+        }
+        return $this->currentOldWordCount;
+    }
+
+    /**
+     * 上一次学习那天的新学单词数
+     * xulinjie
+     * @return int
+     */
+    public function getLastNewWordCount()
+    {
+        if ($this->lastNewWordCount === null && $this->getLastBeginTime() !== null) {
+            $WordProgressL = new WordProgressLogic();
+
+            //计算上次新学单词
+            $map = array();
+            $map['is_new'] = 1;
+            $map['course_id'] = $this->Course->getId();
+            $map['student_id'] = $this->Student->getId();
+
+            $map['time'] = array(array('egt',$this->lastBeginTime),array('lt',$this->lastEndTime));
+
+            $this->lastNewWordCount = (int)$WordProgressL->where($map)->count();
+            unset($WordProgressL);
+        }
+        else{
+            $this->lastNewWordCount = 0;
+        }
+        return $this->lastNewWordCount;
+    }
+
+    /**
+     * 上一次学习那天的复习单词数
+     * xulinjie
+     * @return int
+     */
+    public function getLastOldWordCount(){
+        if ($this->lastOldWordCount === null && $this->getLastBeginTime() !== null) {
+
+            $WordProgressL = new WordProgressLogic();
+
+            //计算上次复习单词
+            $map = array();
+            $map['is_new'] = 0;
+            $map['course_id'] = $this->Course->getId();
+            $map['student_id'] = $this->Student->getId();
+            $map['time'] = array(array('egt',$this->lastBeginTime),array('lt',$this->lastEndTime));
+
+            $this->lastOldWordCount = (int)$WordProgressL->where($map)->count();
+            unset($WordProgressL);
+        }
+        else{
+            $this->lastOldWordCount = 0;
+        }
+        return $this->lastOldWordCount;
+    }
+
+    /**
+     * 上一次学习那天的有效学习时间
+     * xulinjie
+     * @return int
+     */
+    public function getLastStudyTime()
+    {
+        if ($this->lastStudyTime === null && $this->getLastBeginTime() !== null) {
+            $WordProgressLoginWordCourseViewL = new WordProgressLoginWordCourseViewLogic();
+
+            $map = array();
+            $map['word__course_id'] = $this->Course->getId();
+            $map['login__student_id'] = $this->Student->getId();
+            $map['time'] = array(array('egt',$this->lastBeginTime),array('lt',$this->lastEndTime));
+
+            $lists = $WordProgressLoginWordCourseViewL->where($map)->order('time desc')->select();
+            // dump($lists);
+            $temp = $lists[0]['time'];
+            $minus = 0;
+            $sum = 0;
+            $timeInterval = $WordProgressLoginWordCourseViewL->getTimeInterval();
+            // dump($timeInterval);
+            foreach ($lists as $key => $value) 
+            {
+                $minus = $temp - $value['time'];
+                if($minus <= $timeInterval)  //若两次学习的时间间隔小于合理间隔，则认为是有效学习，计入$sum
+                {
+                    $sum = $minus + $sum;
+                }
+                $temp = $value['time'];
+            }
+            // dump($sum);
+            $this->lastStudyTime = (int)floor($sum/60+0.5);
+        } else {
+            $this->lastStudyTime = 0;
+        }
+        return $this->lastStudyTime;
+    }   
+
+
+     /**
+     * 获取 最后一次学习用的总时长（上次用时）
+     * @return int(分)  学习分钟数
+     * anqiang
+     */
+    public function getLastTimeCost()
+    {
+        if (is_null($this->lastTimeCost)) {
+            $WordProgressLoginWordCourseViewLogic = new WordProgressLoginWordCourseViewLogic;
+            $lastTimeCost = $WordProgressLoginWordCourseViewLogic->getLastTimeCostByCourseIdStudentId($this->Course->getId(), $this->Student->getId());
+            $this->lastTimeCost = $lastTimeCost;
+
+            unset($lastTimeCost);
+            unset($WordProgressLoginWordCourseViewLogic);
+        }
+
+        return $this->lastTimeCost;
+    }
+    /**
+     * 是否学前测试
+     * xulinjie
+     * @return true or false
+     */
+    public function isBeforeStudy()
+    {
+        return true;
+    }
+
+    /**
+     * 是否组测试或者阶段测试
+     * xulinjie
+     * @return true or false
+     */
+    public function isTest()
+    {
+        return true;
+    }
+
+    /**
+     * 首次学习并且认对时，添加一次需要重复的记录
+     * @param int $wordId 
+     * @author panjie <panjie@yunzhiclub.com>
+     */
+    private function _addFirstWordStudy($wordId)
+    {
+        $RepeatTimesL = new RepeatTimesLogic();
+        $data = array();
+        $data['word_id'] = $wordId;
+        $data['student_id'] = $this->Student->getId();
+        $data['times'] = 1;
+        $RepeatTimesL->saveList($data);
+        unset($RepeatTimesL);
+        return true;
+    }
+
+    /**
+     * 判断当前单词是否在重复次数表里是根据type执行
+     * @param $wordId  单词id
+     * @param $type 类型 学生学习过程中点不同的按钮回传过来不同的$type
+     * $type === 0（认识->认对）。不记录
+     * $type === 1（认识->认错；不认识；拿不准->认错）。加学2次
+     * $type === 2（拿不准->认对）。首次加学2次，非首次加学1次。
+     * xulinjie panjie
+     * update 2016.06.04 by panjie
+     * @return true
+     */
+    private function _saveRepeatTime($wordId = 0, $type = 0)
+    {
+        $type = (int)$type;
+        $wordId = (int)$wordId;
+
+        // 如果传入的wordId为0，不处理。
+        if (!$wordId)
+        {
+            return true;
+        }
+
+        $RepeatTimesL = new RepeatTimesLogic();
+        $map = array();
+        $map['word_id'] = $wordId;
+        $map['student_id'] = $this->Student->getId();
+        $data = $RepeatTimesL->where($map)->find();
+
+        // 认对，则将次数减1
+        if ($type == 0 && $data)
+        {
+            $data['times'] = $data['times'] - 1;//RepeatTimes表的times减一
+            
+            if ((int)$data['times'])
+            {
+                $RepeatTimesL->saveList($data);
+            }
+            else
+            {
+                $RepeatTimesL->where("id=" . $data['id'])->delete();
+            }
+        }
+        // 如果为认错或是拿不准认对，则进行数据处理. 
+        else if ($type === 1 || $type === 2)
+        {
+            // 数据库中无记录，说是是首次，加直接进行2次的初始化
+            if ($data === null)
+            {
+                $data = $map;
+                $data['times'] = 2;
+            }
+            else if ($type === 1)   
+            {
+                $data['times'] = $data['times'] + 2;    // 认错，直接加2
+            }
+            else                    
+            {
+                $data['times'] =  $data['times'] + 1;   // 拿不准，认对，加1
+            }
+
+            // 最多再学习3次
+            $data['times'] = $data['times'] > 4 ? 4 : $data['times'];
+            $RepeatTimesL->saveList($data);
+        }
+
+        unset($RepeatTimesL);
+
+        return true;
+    }
+
+
+    /**
+     * 添加复习记录, 每复习一次，添加一次
+     * @param  int $wordId 
+     * @return bool         
+     */
+    public function upDateReviewOrder($wordId = 0, $isNew = 0)
+    {
+        $wordId = (int)$wordId;
+        if (0 !== $wordId) {
+            $data = array();
+            $Login = $this->Student->getCurrentLogin();
+            $data['login_id'] = $Login->getId();
+            $data['word_id'] = $wordId;
+            $data['time'] = time();
+            $data['student_id'] = $this->getStudent()->getId();
+            $data['is_new'] = $isNew;
+
+            $WordProgressL = new WordProgressLogic;
+            $WordProgressL->saveList($data);
+            unset($WordProgressL);
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    /**
+     * 根据wordId判断是这个学生的新学 or 复习
+     * 保存学习记录
+     * xulinjie
+     * @return true or false
+     */
+    private function _saveWordProgress($wordId, $isNew = 0)
+    {
+        return $this->upDateReviewOrder($wordId, $isNew);
+    }
+
+    /**
+     * 判断传入单词是否为复习的单词。同时，进行数据更新，增加复习的次数
+     * @param  Word $Word 
+     * @param   $type  0:认识，其它:认错或不认识
+     * @return bool       
+     */
+    private function _checkIsRepeatAndUpdate($Word, $type)
+    {
+        // 判断当前传入的单词是否为复习的单词，如果是复习的单词，则进行单词学习记录的操作后。直接返回当前要学习的单词。
+        $wordId = $Word->getId();
+        $map = array();
+        $map['word_id'] = $Word->getId();
+        $map['student_id'] = $this->Student->getId();
+        $RepeatTimesL = new RepeatTimesLogic();
+        $list = $RepeatTimesL->where($map)->find();
+        unset($RepeatTimesL);
+
+        // 更新重复次数
+        $this->_saveRepeatTime($Word->getId(), $type);
+
+        // 返回
+        if ($list !== null)
+        {
+            return 1;
+        }
+        else
+        {
+            return 0;
+        }
+    }
+
+    /**
+     * 检测是否学新学单词
+     * @param  Word   $Word 
+     * @return bool       
+     */
+    private function _checkIsReview(Word &$Word)
+    {
+        if ($Word->getId() == 0)
+        {
+            return true;
+        }
+
+        $WordProgressLoginViewL = new WordProgressLoginViewLogic;
+        $map = array();
+        $map['word_id'] = $Word->getId();
+        $map['student_id'] = $this->getStudent()->getId();
+        $list = $WordProgressLoginViewL->where($map)->count();
+        unset($WordProgressLoginViewL);
+        if ($list)
+        {
+            return false;
+        } else {
+            return true;
+        }
+    }
+    /**
+     * 适用于老算法！新算法已舍弃
+     * 获取下一个单词,若是在某门课程的学习界面($newWordStudy === 0),
+     * 那么需要往word_progress表和repeat_times表中存储数据，,若是在生词界面学
+     * 习单词，那么不保存数据，只取下一个单词
+     * @param Word Word 单词
+     * @param $type类型(null取初值， 1 认识认对（不重复） 2 各种认错（重复3次） 3 拿不准认对（重复2次）
+     * @return $Word object 下一个单词的对象
+     */
+    public function getNextWord(Word $Word, $nextWord, $type = null)
+    {
+        $WordProgressLoginViewL = new WordProgressLoginViewLogic;
+
+        // 根据类型和单词重置学习次数
+        $this->_saveRepeatTime($Word->getId(), $type);
+
+        $wordId = $Word->getId();
+
+        // 进行单词学习过程的存储
+        if ($type !== null && $wordId)
+        {
+            // 保存学习进度
+            if ($this->_saveWordProgress($wordId))
+            {
+                $this->_addFirstWordStudy($wordId);
+            }
+        }  
+
+        // 取这门课程的当前测试信息，如果有测试信息，则说明现在是测试结点.
+        $Test = $this->getCourse()->getCurrentTest($this->Student);
+        if ($Test->getId() !== 0)
+        {
+            // 测试结点，直接返回空单词
+            $resultWord = new Word(0);
+
+            // 当前是测试结点，则查找是否还需要复习的单词,如果存在，随机返回.
+            // $repeatWordLists = $this->_getRepeatWordLists();
+            // if (empty($repeatWordLists))
+            // {
+            //     $resultWord = new Word(0);
+            // }
+            // else
+            // {
+            //     $key = rand(0, count($repeatWordLists)-1);
+            //     $resultWord = new Word($repeatWordLists[$key]['word_id']);
+            // }
+        }
+        else
+        {
+            // 取这门课程总单词数
+            $totalCount = $this->Course->getWordCount();
+            $currentTotalCount = $this->Course->getNewStudyWordsCount($this->Student);  // 已学单词数
+            $remainTotalCount = $totalCount - $currentTotalCount; // 剩余总单词数
+
+            $beStudyCount = (int)floor($totalCount * $this->Course->getNextTest($this->Student)->getPercent() / 100); // 共需要学的单词数
+            $nextStudy = $beStudyCount - $currentTotalCount;   // 还需要学的单词数
+
+            // 如果需要新学的单词数为0，那么不去查看是否还有需要复习的单词
+            if ($nextStudy < 1)
+            {
+                return new Word(0);
+            }
+            
+            //计算复习单词数
+            $repeatWordLists = $this->_getRepeatWordLists();
+            $oldCount = count($repeatWordLists);
+
+            //随机取一个单词
+            //取还没学习的单词
+            if (rand(1, $remainTotalCount + $oldCount) <= $remainTotalCount)
+            {
+                // 检测nextWord是否为第一次学的单词
+                $isNew = $this->_checkIsReview($nextWord);
+
+                $WordL = new WordLogic();
+                $map = array();
+
+                // 如果传入的单词是复习的单词，则直接取该课程的当前单词
+                if (!$isNew)
+                {
+                    $resultWord = $this->Course->getCurrentStudyWord($this->Student);
+                }
+                else
+                {
+                    $resultWord = $nextWord->getNextWord();
+                }
+
+                // 判断当前取回的单词是否学过。学习过的话，取下一个单词，直至取到最后一个单词
+                do {
+                    $map = array();
+                    $map['word_id'] = $resultWord->getId();
+                    $map['student_id'] = $this->getStudent()->getId();
+                    $map['is_new'] = '1';
+                    $count = $WordProgressLoginViewL->where($map)->count();
+                } while ($count && ($resultWord = $resultWord->getNextWord()) && ($resultWord->getId() !== 0));
+            }
+
+            //取重复次数表里面的单词
+            else
+            {
+                $pos = rand(0, $oldCount - 1);
+                $resultWord = new Word($repeatWordLists[$pos]['word_id']);
+            }
+        }
+        unset($RepeatTimesLogic);
+
+        // 防止对老课程进行单词的修改而出现的BUG，返回空的单词前，需要进行判断
+        if (0 === $resultWord->getId())
+        {
+            // 取出课程的单词列表, 截取前面多少个，然后依次判断
+            
+            if (0 == $Test->getId())
+            {
+                $Test = $this->getCourse()->getNextTest($this->Student);
+            }      
+
+            $percentCount = $Test->getPercentWordCount();
+
+            $wordLists = $this->getCourse()->getWords();
+
+            // 依次过一遍，看是否有漏网之鱼
+            $map = array();
+            $map['is_new'] = '1';
+            $map['student_id'] = $this->Student->getId();
+            
+            foreach ($wordLists as $key => $word)
+            {
+                if ($key == $percentCount)
+                {
+                    break;
+                }
+
+                $map['word_id'] = $word->getId();
+                $data = $WordProgressLoginViewL->where($map)->find();
+                if (null === $data)
+                {
+                    $resultWord = $word;
+                    break;
+                }
+            }
+            unset($wordLists);
+        }
+
+        $studentId = $this->getStudent()->getId();
+        $courseId = $this->getCourse()->getId();
+        unset($WordProgressLoginViewL);
+        return $resultWord;
+    }
+
+    /**
+     * 获取学生当前需要学习的单词
+     * @param    Word $Word 单词
+     * @param    string $type 用户点击的类型 认识'know' 不认识：unknow
+     * @param int $isNew 是否为新闻单词
+     * @return \Home\Model\Word
+     * @author panjie panjie@mengyunzhi.com
+     * @DateTime 2016-10-08T16:19:45+0800
+     */
+    public function getNextStudyWord(Word $Word, $type = 'know', $isNew = 0)
+    {
+        $StudentWordStudyListModel = new StudentWordStudyListModel;
+        
+        if (0 !== $Word->getId()) {
+            // 对传入的单词进行处理, 计算出该单词下次应该出现的时间
+            $StudentWordStudyListModel->computeAndSetNextAppearTime($Word, $this->Student, $type);
+            // 进行单词学习过程的存储
+            $this->_saveWordProgress($Word->getId(), $isNew);
+        }
+        
+        // 需要再次学习的列表中，存在需要现在学习的单词
+        $NowWord = $StudentWordStudyListModel->getNowStudyWord($this->Student);
+
+
+        // 复习列表中，不存在需要现在学习的单词。则取学习结点表中的数据。同时，设置单词为新单词
+        if (0 === $NowWord->getId()) {
+            $NowWord = $this->getFirstStudyWordOnNodeList()->setIsNewWord(1);
+        }
+        
+        unset($StudentWordStudyListModel);
+        // 返回学生需要学习的单词
+        return $NowWord ;
+    }
+
+    /**
+     * 按学习单词的个数，计算学习百分比
+     * @param  Student $Student 学生
+     * @return int           百分比
+     * @author  panjie <3792535@qq.com>
+     */
+    public function getProgressPercent()
+    {
+        if (is_null($this->progressPercent)) {
+            // 取学习的单词数
+            $studiedCount = (int)$this->getNewStudyWordsCount();
+            // 取本课程总共单词数
+            $totalCount = $this->getCourse()->getWordCount();
+
+            // 得百分比
+            $percent = (int)floor($studiedCount / $totalCount * 100);
+
+            /**
+             * 进行百分比加1后的反向运算，规避这样的问题：
+             * 已学302，总共306，测试结点：99%。
+             * 通过学习数求百分比：302/306 = 98;
+             * 通过百分比求需要的学习数：306*99 = 302;
+             * 这样就使得：获取当前测试时，由于使用的302/306 = 98 < 99，而未触发测试。
+             * 而当我们进行下一个单词取词时:使用306*99 = 302, 却得出本组单词学完要触发测试的结论。
+             * 一个未触发测试，另一个触发测试。。。。相矛盾引起了第302个单词反复学习却永远无法达到测试状态。
+             */
+            if ((int)floor($totalCount * ($percent + 1) / 100) == $studiedCount)
+            {
+                $percent++;
+            }
+
+            // 对百分比为0时，进行判断，如果学习了，那么百分比至少为1
+            if (!$percent && $studiedCount)
+            {
+                $percent = 1;
+            }
+            $this->progressPercent = $percent;
+        }
+
+        return $this->progressPercent;
+    }
+
+    /**
+     * 获取正在学习的单词
+     * @return   Word                   单词
+     * @author panjie panjie@mengyunzhi.com
+     * @DateTime 2016-10-17T08:50:38+0800
+     */
+    public function getStudingWord()
+    {
+        if (null === $this->studingWord) {
+            $StudentWordStudyNodeModel = new StudentWordStudyNodeModel;
+            $this->studingWord = $StudentWordStudyNodeModel->getStudingWord($this->Student, $this->Course);
+            unset($StudentWordStudyNodeModel);
+        }
+
+        return $this->studingWord;
+    }
+
+    /**
+     * 获取新学单词数
+     * @return   int                   
+     * @author panjie panjie@mengyunzhi.com
+     * @DateTime 2016-10-20T14:51:11+0800
+     */
+    public function getNewStudyWordsCount()
+    {
+        if (null === $this->newStudyWordsCount) {
+            //$this->getReviewAndStudyCount();
+            $StudentWordStudyNodeModel = new StudentWordStudyNodeModel;
+            $this->newStudyWordsCount = $StudentWordStudyNodeModel->getMaxIndex($this->Student, $this->Course);
+            unset($StudentWordStudyNodeModel);
+        }
+        
+        return $this->newStudyWordsCount;
+    }
+
+    /**
+     * Create by panjie@yunzhiclub.com
+     * 获取本对象的数据
+     */
+    private function getReviewAndStudyCount() {
+        // 查询表并存数
+        $StudentCourseProcessL = new StudentCourseProcessLogic();
+        $map = [];
+        $map['course_id'] = $this->getCourse()->getId();
+        $map['student_id'] = $this->getStudent()->getId();
+
+        $list = $StudentCourseProcessL->where($map)->find();
+        if (!is_null($list)) {
+            $this->oldStudyWordsCount = $list['review_count'];
+            $this->newStudyWordsCount = $list['study_count'];
+        } else {
+            $this->oldStudyWordsCount = 0;
+            $this->newStudyWordsCount = 0;
+        }
+
+        unset($StudentCourseProcessL);
+        unset($list);
+        unset($map);
+    }
+    /**
+     * 获取复习单词数
+     * @return   int                   
+     * @author panjie panjie@mengyunzhi.com
+     * @DateTime 2016-10-20T14:51:23+0800
+     */
+    public function getOldStudyWordsCount()
+    {
+        if (null === $this->oldStudyWordsCount) {
+            $StudentWordReviewNodeModel = new StudentWordReviewNodeModel;
+            $this->oldStudyWordsCount = $StudentWordReviewNodeModel->getMaxIndex($this->Student, $this->Course);
+            unset($StudentWordReviewNodeModel);
+        }
+        
+        return $this->oldStudyWordsCount;
+    }
+
+    /**
+     * 获取当前正在复习的单词
+     * @return   [type]                   Word
+     * @author 梦云智 http://www.mengyunzhi.com
+     * @DateTime 2016-10-26T15:44:56+0800
+     */
+    public function getCurrentReviewWord()
+    {
+        if (null === $this->currentReviewWord) {
+            $StudentWordReviewNodeModel = new StudentWordReviewNodeModel;
+            $this->currentReviewWord = $StudentWordReviewNodeModel->getStudingWord($this->Student, $this->Course);
+            unset($StudentWordReviewNodeModel);
+        }
+
+        return $this->currentReviewWord;
+    }
+    /**
+     * 获取学习节点上的首个需要学习的单词
+     * @param    boolean                  $isUpdate 是否对节点进行更新
+     * @return   Word                             要学习的单词，学习完毕，则返回默认单词
+     * @author panjie panjie@mengyunzhi.com
+     * @DateTime 2016-10-14T10:33:08+0800
+     */
+    public function getFirstStudyWordOnNodeList($isUpdate = true)
+    {
+        // 获取用户当前正在学习的单词的下一单词做为用户需要学习的单词
+        $StudentWordStudyNodeModel = new StudentWordStudyNodeModel;
+        $NowWord = $StudentWordStudyNodeModel->getNextWord($this->Student, $this->Course);
+
+        // 非默认单词，则进行是否为测试节点的判断，进行学习进度的更新
+        if (0 !== $NowWord->getId()) {
+            if ($this->checkIsTestWord($NowWord)) {
+                unset($StudentWordStudyNodeModel);
+                return new Word(0);
+            }
+
+            // 更新用户当前正在学习的单词
+            if ($isUpdate) {
+                $StudentWordStudyNodeModel->updateNodeList($NowWord, $this->Student);
+            }
+           
+        }
+        unset($StudentWordStudyNodeModel);
+        return $NowWord;
+    }
+
+
+    /**
+     * 校验是否为测试节点单词
+     * @param    Word                     $Word 单词
+     * @return   bool                         
+     * @author panjie panjie@mengyunzhi.com
+     * @DateTime 2016-10-14T10:35:44+0800
+     */
+    public function checkIsTestWord(Word $Word)
+    {      
+        // 获取未通过的首个测试 
+        $unPassedTest = $this->getFirstUnpassedTest();
+
+        // 如果获取到测试信息，而且当前单词的索引号大于当前测试的触发测试单词数
+        if ((0 !== $unPassedTest->getId()) && ($Word->getIndex() > $unPassedTest->getPercentWordCount())) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+ 
+    /**
+     * 获取未通过的首个测试
+     * @return   Test                   测试
+     * @author panjie panjie@mengyunzhi.com
+     * @DateTime 2016-10-17T08:54:22+0800
+     */
+    public function getFirstUnpassedTest()
+    {
+        if (null === $this->firstUnpassedTest) {
+            // 获取当前课程中用户未通过的测试节点信息
+            $Test = new Test();
+            $this->firstUnpassedTest = $Test->getFirstUnpassedTestByStudentCourse($this->Student, $this->Course);
+            unset($Test);
+        }
+
+        return $this->firstUnpassedTest;
+    }
+
+    /**
+     * 获取需要复习的单词列表
+     * @return array 包括有单词ID的一组数据 
+     * array(1,2,3,3,4,5)
+     * panjie
+     */
+    private function _getRepeatWordLists()
+    {
+        if ($this->repeatWordLists === null)
+        {
+            //取复习单词$result,其中存放单词id
+            $map = array();
+            $map['student_id'] = $this->Student->getId();
+            $map['word__course_id'] = $this->Course->getId();
+            $map['times'] = array('neq',0);
+            $RepeatTimesWordViewL = new RepeatTimesWordViewLogic();
+            $datas = $RepeatTimesWordViewL->where($map)->select();
+            $this->repeatWordLists = array();
+            foreach ($datas as $value) {
+                for($i = 0; $i < $value['times']; $i++)
+                {
+                    $this->repeatWordLists[] = $value;
+                }
+            }
+            unset($RepeatTimesWordViewL);
+        }
+        return $this->repeatWordLists;
+    }
+
+    /**
+     * 获取下一个复习的单词
+     * @param  当前正在学习的单词 $wordId     
+     * @param  int $nextWordId 将要学习的单词
+     * @param  学生点击的类型 $type  1 认识认对（不重复） 2 各种认错（重复4次） 3 拿不准认对（重复2次）
+     * @return Word
+     * @author panjie <panjie@yunzhiclub.com>
+     */
+    public function getNextReivewWord(Word $Word, Word $nextWord, $type)
+    {
+        // 检查是否为重复的单词，并且按认对 认错更新复习次数
+        $this->_checkIsRepeatAndUpdate($Word, $type);
+
+        // 更新复习的个数
+        $this->upDateReviewOrder($Word->getId());
+
+        // 取出当前课程的测试信息
+        $Test = $this->getCourse()->getCurrentTest($this->getStudent());
+
+        // 取出当前测试中的所有单词
+        if ($Test->getId() == 0)
+        {
+            $words = $this->getCourse()->getWords();
+        } else {
+            $words = $Test->getStudyOrderAllWords();
+        }
+
+
+        // 取出学生复习的当前单词
+        $currentReviewWord = $this->getCourse()->getCurrentReviewWord($this->getStudent());
+
+        // 如果不存在复习的单词，那么返回所有单词的第一个单词即可。当然了，这时候，需要更新
+        if ($currentReviewWord->getId() == 0)
+        {
+            if (isset($words[0]))
+            {
+                $this->upDateStudentWordTable($words[0]);
+                return $words[0];
+            } else {
+                $this->upDateStudentWordTable(new Word(0));
+                return new Word(0);
+            }
+        }
+
+        // 取出所有需要重复的单词
+        $repeatWordLists = $this->getCourse()->getRepeatWordLists($this->getStudent());
+
+        // 判断学生学习的当前单词的位置，从而得出还有多少单词没有学习。
+        $i = 0;
+        $length = count($words);
+        foreach ($words as &$word)
+        {
+            if ($word->getId() == $currentReviewWord->getId())
+            {
+                break;
+            }
+            $i++; 
+        }    
+
+        // 如果当前单词没有在记录中，那么还是返回第一个单词
+        if ((!count($repeatWordLists)) && ($length === ($i + 1)))
+        {
+            if (isset($words[0]))
+            {
+                $resultWord = $words[0];
+            } else {
+                $resultWord = new Word(0);
+            }
+
+            // 如果取出的单词为最后一词，则更新进度表
+            $this->upDateStudentWordTable($resultWord);
+            return $resultWord;
+        }
+
+        // 分别计算还没有复习及需要重复的单词数
+        $repeatCount = count($repeatWordLists);
+        $remainCount = $length - $i;
+
+        // 没有单词要复习和学习 
+        if (!$repeatCount && !$remainCount)
+        {
+            $this->upDateStudentWordTable(new Word(0));
+            return new Word(0);
+        }
+
+        // 取随机数来判断需要输出的单词
+        $randomkey = rand(1, $repeatCount + $remainCount);
+
+        // 大于重复的，取下一个单词，并且更新复习记录
+        if ($randomkey > $repeatCount)
+        {   
+            $currentReviewWord = $currentReviewWord->getNextWord();
+            if (0 == $currentReviewWord->getId())
+            {
+                // 如果取出的单词为最后一词，则更新进度表
+                $this->upDateStudentWordTable($currentReviewWord);
+            }
+            // 如果传入的下一单词也是新学，则取当前单词的下下个单词。否则，如果下一个单词是复习，则直接返回当前单词的下一个单词
+            else if ($currentReviewWord->getId() && ($currentReviewWord->getId() == $nextWord->getId()))
+            {
+                // 下一单词为新学，则更新当前进度为下一个即将学习的单词 
+                $this->upDateStudentWordTable($currentReviewWord);
+                $currentReviewWord = $currentReviewWord->getNextWord();
+            }
+
+            return $currentReviewWord;
+        } else {
+            // 随机返回一个需要复习的单词
+            shuffle($repeatWordLists);
+            return new Word(array_pop($repeatWordLists));
+        }
+    }
+
+    /**
+     * 更新学生 复习节点表
+     * @param  Word   &$Word 单词
+     * @return bool        true
+     * @author panjie panjie@yunzhiclub.com
+     */
+    public function upDateStudentWordTable(Word &$Word)
+    {
+        // 查出原始的记录
+        $StduentWordViewM = new StudentWordViewModel;
+        $map = array();
+        $map['student_id'] = $this->getStudent()->getId();
+        $map['word__course_id'] = $this->getCourse()->getId();
+        $list = $StduentWordViewM->where($map)->find();
+        unset($StduentWordViewM);
+
+        // 按条件进行更新更删除
+        $StudentWordM = new StudentWordModel;
+        // 如果存在记录，并且下一单词是0，则删除原有数据。
+        if ($Word->getId() == 0 && null !== $list)
+        {
+            $map = array();
+            $map['id'] = $list['id'];
+            $StudentWordM->where($map)->delete();
+        } else {
+            // 如果下一单词不是0.则进行数据的更新
+            $data = array();
+            if (null !== $list)
+            {
+                $data['id'] = $list['id'];
+            }
+            $data['student_id'] = $this->getStudent()->getId();
+            $data['word_id'] = $Word->getId();
+            $StudentWordM->saveList($data);
+        }
+
+        unset($StudentWordM);
+        unset($map);
+        unset($data);
+        unset($list);
+
+        return true;
+    }
+
+    /**
+     * 获取学习次数
+     * @return   int                   
+     * @author 梦云智 http://www.mengyunzhi.com
+     * @DateTime 2016-11-10T09:21:07+0800
+     */
+    public function getLearnCounts()
+    {
+        if (is_null($this->learnCounts)) {
+            $WordProgressLoginWordCourseViewLogic = new WordProgressLoginWordCourseViewLogic;
+            $learnCounts = $WordProgressLoginWordCourseViewLogic->getLearnTimesByCourseIdStudentId($this->Course->getId(), $this->Student->getId());
+            $this->learnCounts = $learnCounts;
+            unset($WordProgressLoginWordCourseViewLogic);
+            unset($learnCounts);
+        }
+        return $this->learnCounts;
+    }
+
+    /**
+     * 获取 首次学习 时间
+     * @return   int                   时间戳
+     * @author 梦云智 http://www.mengyunzhi.com
+     * @DateTime 2016-11-10T09:28:36+0800
+     */
+    public function getFirstStudyTime()
+    {        
+        if (is_null($this->firstStudyTime)) {
+            $WordProgressLoginWordCourseViewLogic = new WordProgressLoginWordCourseViewLogic;
+            $firstStudyTime = $WordProgressLoginWordCourseViewLogic->getFirstTimeByCourseIdStudentId($this->Course->getId(), $this->Student->getId());
+            $this->firstStudyTime = $firstStudyTime;
+            unset($WordProgressLoginWordCourseViewLogic);
+            unset($firstStudyTime);
+        }
+
+        return $this->firstStudyTime;
+    }
+
+    /**
+     * 获取未学习的 剩余单词数
+     * @return   int                   
+     * @author 梦云智 http://www.mengyunzhi.com
+     * @DateTime 2016-11-10T10:09:16+0800
+     */
+    public function getRemainCount()
+    {
+        if (is_null($this->remainCount)) {
+            $remainCount = $this->Course->getWordCount() - $this->getNewStudyWordsCount();
+            $this->remainCount = $remainCount;
+            unset($remainCount);
+        }
+
+        return $this->remainCount;
+    }
+}
+

@@ -1,0 +1,144 @@
+<?php
+
+namespace Home\Model;
+
+use Klass\Logic\KlassLogic;
+use KlassCourse\Logic\KlassCourseLogic;
+use Student\Logic\StudentLogic;                 // 学生
+use ArticleKlass\Model\ArticleKlassModel;       // 班级阅读闯关
+
+class Klass extends Model
+{
+    public $data = ['_class' => __CLASS__];
+    protected static $KlassCourseL;
+    private static $KlassL = NULL;
+    protected $courseCount;
+    private $Teacher = NULL;        // 教师类
+    private $Students = array();    // 本班学生 Student
+    private $allCourse = NULL;      // 所有课程
+    private $articles = NULL;       // 阅读闯关
+
+    public function __construct($data = null)
+    {
+        if (!is_null($data)) {
+            if (is_array($data)) {
+                $this->setData($data);
+            } else {
+                $id = (int)$data;
+                $klass = self::getKlassL()->where("id=$id")->find();
+                if ($klass !== NULL) {
+                    $this->setData($klass);
+                }
+            }
+        }
+    }
+
+    public static function getKlassL()
+    {
+        if (is_null(self::$KlassL)) {
+            self::$KlassL = new KlassLogic();
+        }
+
+        return self::$KlassL;
+    }
+
+
+    public function getTeacher()
+    {
+        if (is_null($this->Teacher)) {
+            $this->Teacher = new Teacher($this->getData('user_id'));
+        }
+        return $this->Teacher;
+    }
+
+    public function getCourseCount() {
+        if (is_null($this->courseCount)) {
+            $this->courseCount = Cache::get(__CLASS__, __FUNCTION__, $this->getId());
+            if (false === $this->courseCount) {
+                $map = array();
+                $map['klass_id'] = $this->getId();
+                $this->courseCount = $this->getKlassCourseL()->where($map)->count();
+                Cache::set(__CLASS__, __FUNCTION__, $this->getId(), $this->courseCount, 3600 * 24 * 7);
+            }
+        }
+
+        return $this->courseCount;
+    }
+
+    public static function getKlassCourseL() {
+        if (is_null(self::$KlassCourseL)) {
+            self::$KlassCourseL = new KlassCourseLogic();
+        }
+
+        return self::$KlassCourseL;
+    }
+
+    public function getAllCourses()
+    {
+        if (is_null($this->allCourse)) {
+            $this->allCourse = [];
+            $cacheKey = $this->id;
+            if (FALSE === Cache::get(__CLASS__, __FUNCTION__, $cacheKey)) {
+                $KlassCourseLogic = new KlassCourseLogic();
+                $map = [];
+                $map['klass_id'] = $this->id;
+                $lists = $KlassCourseLogic->where($map)->select();
+                foreach ($lists as $list) {
+                    array_push($this->allCourse, new Course($list['course_id']));
+                }
+                Cache::set(__CLASS__, __FUNCTION__, $cacheKey, $this->allCourse, 3600 * 24 * 7);
+            } else {
+                $this->allCourse = Cache::get(__CLASS__, __FUNCTION__, $cacheKey);
+            }
+        }
+
+        return $this->allCourse;
+    }
+
+
+    public function getArticles()
+    {
+        if (NULL === $this->articles) {
+            $this->articles = Cache::get(__CLASS__, __FUNCTION__, $this->getData('id'));
+            if (FALSE === $this->articles) {
+                $ArticleKlassM = new ArticleKlassModel;
+                $map['klass_id'] = $this->getId();
+                $datas = $ArticleKlassM->field('article_id')->where($map)->select();
+
+                // 依次加入数据
+                foreach ($datas as &$data) {
+                    $Article = new Article($data['article_id']);
+
+                    // 判断该文章是否被删除
+                    if (0 !== $Article->getId()) {
+                        $this->articles[] = $Article;
+                    }
+                }
+                unset($ArticleKlassM);
+                unset($datas);
+                unset($data);
+                Cache::set(__CLASS__, __FUNCTION__, $this->getData('id'), $this->articles, 3600 * 24 * 7);
+            }
+        }
+
+        return $this->articles;
+    }
+
+    public function getStudents()
+    {
+        static $status = 0;
+        if ($status === 0) {
+            $StudentL = new StudentLogic;
+            $map = array();
+            $map['klass_id'] = $this->id;
+            $lists = $StudentL->where($map)->select();
+            $result = array();
+            foreach ($lists as $list) {
+                $result[] = new Student($list['id']);
+            }
+            $this->Students = $result;
+        }
+
+        return $this->Students;
+    }
+}

@@ -1,0 +1,62 @@
+<?php
+return array(
+
+    'AUTCH_CODE_PHONE'  => '13920156607',                   // 接收验证码的电话号码
+    'YUNZHI_LOG_RECORDS' => array(
+        array("c"=>"Config", "a"=>"blog"),
+        array("c"=>"log", "a"=>"test")
+        ),                                                  // 记录操作日志
+    'YUNZHI_LOG_PATH' => '/Runtime/File/Log',               // 日志文件位置
+    /* 模板相关配置 */
+    'TMPL_PARSE_STRING' => array(
+        '__UPLOADS__'    => __ROOT__ . '/uploads'
+    ),
+
+    'YUNZHI_GRADE' => 90,                                   // 默认组测试通过成绩
+    'YUNZHI_PAGE_SIZE'      => 10,                          // 默认分页大小
+
+    'TMPL_TEMPLATE_SUFFIX'  => '.tpl',                      // 默认模板文件后缀
+    'ACTION_SUFFIX'         => 'Action',                    // 设置ACTION前缀为action
+    'TAGLIB_PRE_LOAD'       => 'Yunzhi,Html',               // 需要额外加载的标签库(须指定标签库名称)，多个以逗号分隔 
+    'DEFAULT_PASSWORD'      => '111111',
+
+    'DB_TYPE'               =>  'mysqli',                   // 数据库类型
+    'DB_HOST'               =>  '127.0.0.1',                // 服务器地址
+    'DB_NAME'               =>  'english_study',            // 数据库名
+    'DB_USER'               =>  'root',                     // 用户名
+    'DB_PWD'                =>  '',                         // 密码
+    'DB_PORT'               =>  '3306',                     // 端口
+    'DB_PREFIX'             =>  'english_',                 // 数据库表前缀
+    'DB_CHARSET'            =>  'utf8',
+    
+    // 缓存配置
+    'DATA_CACHE_TYPE'       => 'redis',                      // 类型
+    'DATA_CACHE_PREFIX'     => 'english_',                  // 前缀
+    'DATA_CACHE_TIMEOUT'    => 86400,
+    'REDIS_HOST'            => '127.0.0.1',
+    'REDIS_PORT'            => 6379,
+    'REDIS_AUTH_PASSWORD'   => 'panjie',
+
+    'URL_MODEL'             =>  1,                          // URL访问模式,可选参数0、1、2、3,代表以下四种模式：
+
+    'URL_CASE_INSENSITIVE'  =>  false,                      // 严格大小写
+    //开启令牌验证
+    'TOKEN_ON'              =>    false,                    // 是否开启令牌验证 默认关闭
+    'TOKEN_NAME'            =>    '__hash__',               // 令牌验证的表单隐藏字段名称，默认为__hash__
+    'TOKEN_TYPE'            =>    'md5',                    // 令牌哈希验证规则 默认为MD5
+    'TOKEN_RESET'           =>    true,                     // 令牌验证出错后是否重置令牌 默认为true
+
+    /*
+    * session过期时间设置为半个小时
+    * thinkphp的处理方法并不严谨，当然了，大多数项目也不需要严谨
+    * 这并不是thinkphp的问题，而是php的问题。
+    * 最好的方法是使用session进行数据缓存的同时，缓存一个时间戳。
+    * 然后对这个时间戳与当前时间进行是否过期的判断
+    * 详细的方法请参见：http://www.laruence.com/2012/01/10/2469.html
+    */
+    'SESSION_OPTIONS' => array('expire'=>60*60*12),         //session进期时间为12小时 
+
+    'YUNZHI_TIME_INTERVAL'    =>     60,                    //有效学习间隔
+
+    // 'SHOW_PAGE_TRACE'    => true,                        //页面显示时间
+);

@@ -1,0 +1,83 @@
+<script id="studyHalf.html" type="text/ng-template">
+    <div class="row-fluid">
+        <div class="form-group" ng-controller="StudyHalfCtrl" class="em1_4">
+            <div class="row">
+                <div class="col-md-12 col-xs-12">
+                    <div class="row">
+                        <div class="col-md-6 col-xs-12">
+                            <div class="checkbox">
+                                <label ng-repeat="checkbox in checkboxs.checkboxs">
+                                    <input type="checkbox" ng-model="checkbox.checked" ng-click="{{checkbox.function}}" /> {{checkbox.name}}
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-{{widthLeft}} em14" ui-view>
+                        </div>
+                        <div class="col-md-{{widthRight}}">
+                            <div class="thumbnail">
+                                <div class="row">
+                                    <div class="col-md-1 align" ng-click="toggle(right)">
+                                        <button class="btn btn-link" ng-model="right" ><i class="fa fa-caret-{{right}}"></i></button>
+                                    </div>
+                                    <div class="col-md-10" ng-show="schedule">
+                                        <div class="caption">
+                                            <h4>今日进程</h4>
+                                            <p>单词有效记忆时间（分钟）</p>
+                                            <div class="progress">
+                                                <div class="progress-bar active progress-striped" role="progressbar" aria-valuenow="65" aria-valuemin="0" aria-valuemax="100" style="width:{{timerWithTimeout | minutes}}%;">
+                                                    {{timerWithTimeout | minutes}}分钟
+                                                </div>
+                                            </div>
+                                            <p>
+                                                学习新词：{{currentNewWordCount}}
+                                            </p>
+                                            <p>
+                                                复习：{{currentOldWordCount}}
+                                            </p>
+                                            <div class="part">
+                                                <p>
+                                                    本次学习时间：{{timerWithTimeout | hhmmss}}
+                                                </p>
+                                            </div>
+                                            <h4>总体进程</h4>
+                                            <p>单词有效记忆时间（分钟）</p>
+                                            <div class="progress">
+                                                <div class="progress-bar active progress-striped" role="progressbar" aria-valuenow="65" aria-valuemin="0" aria-valuemax="100" style="width:{{studyList.totalStudyTime}}%;">
+                                                    {{studyList.totalStudyTime}}分钟
+                                                </div>
+                                            </div>
+                                            <p>学习进度</p>
+                                            <div class="progress">
+                                                <div class="progress-bar active progress-striped" role="progressbar" aria-valuenow="65" aria-valuemin="0" aria-valuemax="100" style="width:{{studyList.courseProgress}}%;">
+                                                {{studyList.courseProgress}}%
+                                                </div>
+                                            </div>
+                                            <div class="part"></div>
+                                            <h4>上次进程&nbsp;{:date('Y-m-d', $studiedRecordLogin->getTime())}</h4>
+                                            <p>单词有效记忆时间（分钟）</p>
+                                            <div class="progress">
+                                                <div class="progress-bar active progress-striped" role="progressbar" aria-valuenow="65" aria-valuemin="0" aria-valuemax="100" style="width:{$studiedRecordLogin->getStudyMinites()}%;">
+                                                    {$studiedRecordLogin->getStudyMinites()}分钟
+                                                </div>
+                                            </div>
+                                            <p>
+                                                学习新词：{$studiedRecordLogin->getStudiedNewWordsCount()}
+                                            </p>
+                                            <p>
+                                                复习：{$studiedRecordLogin->getReviewedWordCount()}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <audio id="audio">您的浏览器不支持HTML5, 读音无法正确播放，请升级您的浏览器</audio>
+    </div>
+</script>
+<include file="studyCSS" />

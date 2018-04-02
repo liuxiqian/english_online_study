@@ -1,0 +1,811 @@
+<?php
+/**
+* 前台 
+* 单词
+* anqiang
+*/
+namespace Home\Model;
+
+use Word\Logic\WordLogic;                           //单词
+use Word\Model\WordModel;                           // 单词
+use WordExtend\Logic\WordExtend;                    //单词扩展信息
+use WordExplain\Model\WordExplainModel;             // 单词扩展释义
+use WordWordNature\Model\WordWordNatureModel;       // 单词扩展属性值
+use WordProgress\Logic\WordProgressLogic;           // 单词进度
+use WordProgressLoginWordCourseView\Logic\WordProgressLoginWordCourseViewLogic;//单词进度登陆单词课程视图
+use WordProgressLoginView\Logic\WordProgressLoginViewLogic; // 单词进度学生视图
+use RepeatTimes\Logic\RepeatTimesLogic;     //重复次数表
+use StudentWordStudyList\Model\StudentWordStudyListModel;       // 学生学习单词记录表
+
+class Word
+{
+    private $id = 0;                        // 单词编号
+    private $title = "";                    // 单词名称
+    private $ukPhonetic = "";               // 英式音标
+    private $usPhonetic = "";               // 美式音标
+    private $audioUsUrl = null;             // 美式读音url
+    private $audioUkUrl = null;             // 英式读音url
+    private $translation = "";              // 基本释义
+    private $syllable = "";                 // 音节
+    private $explains = null;               // 所有释义 array()
+    private $example = "";                  // 例句
+    private $exampleTranslate = "";         // 例句释义
+    private $extends = null;                // 扩展信息
+    private $star = 0;                      // 难度星级
+    private $randomQuestionWords = null;    // 随机选项array(Word)
+    private $jsonData = null;               // json数据
+    private $courseId = 0;                  // 课程id
+    private $attachmentId = 0;              // 附件ID
+    private $Attachment = null;             // 附件
+    private $nextId = 0;                    // 下一个单词id
+    private $preId = 0;                     // 上一个单词id
+    private $index = 0;                     // 在课程中的序列值
+    private $Course = null;                 // 课程类
+    private $isNewWord = 0;                 // 是否为新词
+
+    function __construct($id = 0)
+    {
+        $id = (int)$id;
+        $WordL = new WordLogic();
+        $word = $WordL->where("id=" . $id)->find();
+        $this->id               = (int)$id;
+        $this->title            = (string)$word['title'];
+        $this->ukPhonetic       = (string)$word['uk_phonetic'];
+        $this->usPhonetic       = (string)$word['us_phonetic'];
+        $this->translation      = (string)$word['translation'];
+        $this->star             = (int)$word['star'];
+        $this->courseId         = (int)$word['course_id'];
+        $this->syllable         = (string)$word['syllable'];
+        $this->example          = (string)$word['example'];
+        $this->exampleTranslate = (string)$word['example_translate'];
+        $this->attachmentId     = (int)($word['attachment_id']);
+        $this->nextId           = (int)$word['next_id'];
+        $this->preId            = (int)$word['pre_id'];
+        $this->index            = (int)$word['index'];
+        unset($WordL);
+    }
+    
+    public function getCourseId()
+    {
+        return $this->courseId;
+    }
+
+    public function getCourse()
+    {
+        if($this->Course === null)
+        {
+            $this->Course = new Course($this->getCourseId());
+        }
+        return $this->Course;
+    }
+
+    public function getAttachmentId()
+    {
+        return $this->attachmentId;
+    }
+    
+    public function getAttachment()
+    {
+        if ($this->Attachment === null)
+        {
+            $this->Attachment = new Attachment($this->getAttachmentId());
+        }
+        return $this->Attachment;
+    }
+
+    public function getIndex()
+    {
+        return (int)$this->index;
+    }
+
+    //获取本类对象id
+    public function getId()
+    {
+        return $this->id;
+    }
+
+    //获取上个单词id
+    public function getPreId()
+    {
+        return (int)$this->preId;
+    }
+
+    //获取下一个单词id
+    public function getNextId()
+    {
+        return (int)$this->nextId;
+    }
+
+    //获取本类对象名称
+    public function getTitle()
+    {
+        return $this->title;
+    }
+
+    //获取本类对象美式读音url
+    public function getAudioUsUrl()
+    {
+        if ($this->audioUsUrl === null)
+            $this->audioUsUrl = $this->_getAudioUrl('us');
+        return $this->audioUsUrl;
+    }
+
+    //获取本类对象英式读音url
+    public function getAudioUkUrl()
+    {
+        if ($this->audioUkUrl === null)
+            $this->audioUkUrl = $this->_getAudioUrl('uk');
+        return $this->audioUkUrl;
+    }
+
+    // 基本释义
+    public function getTranslation()
+    {
+        return $this->translation;
+    }
+
+    /**
+     * 根据类型获取单词的读音URL，如果读音不存在，则返回默认的MP3文件
+     * @param  string $type us美式 uk英式
+     * @return string       绝对路径
+     * @author panjie
+     */
+    private function _getAudioUrl($type)
+    {
+        $path = __ROOT__ .'/audio/'. $type . '/';
+        if (is_file($this->_makeFilePath($type)))
+        {
+            
+            return $path . $this->reMakeTitle($this->getTitle()) . '.mp3';
+        }
+        else
+        {
+            return $path . '_default.mp3';
+        }
+    }
+
+    /**
+     * 获取英式读音文件是否存在
+     * @return bool 
+     * @author panjie <panjie@yunzhiclub.com>
+     */
+    public function getIsUkAudioFileExist()
+    {
+        if (null === $this->isUkAudioFileExist)
+        {
+            $this->isUkAudioFileExist = true;
+            if (!is_file($this->_makeFilePath('uk')))
+            {
+                $this->isUkAudioFileExist = false;
+            }
+        }
+
+        return $this->isUkAudioFileExist;
+    }
+
+    /**
+     * 获取美式读音是否存在
+     * @return bool 
+     * @author panjie <panjie@yunzhiclub.com>
+     */
+    public function getIsUsAudioFileExist()
+    {
+        if (null === $this->isUsAudioFileExist)
+        {
+            $this->isUsAudioFileExist = true;
+            if (!is_file($this->_makeFilePath('us')))
+            {
+                $this->isUsAudioFileExist = false;
+            }
+        }
+
+        return $this->isUsAudioFileExist;
+    }
+
+    /**
+     * 根据传入的读音类型拼接文件路径信息
+     * @param  string $type uk us
+     * @return string       服务器的绝对路径信息
+     * @author panjie <panjie@yunzhiclub.com>
+     */
+    private function _makeFilePath($type)
+    {
+        $file = '/audio/'. $type . '/' . $this->reMakeTitle($this->getTitle()) . '.mp3';
+        $public = dirname(THINK_PATH) . '/Public';
+        $filePath = $public . $file;
+        return $filePath;
+    }
+
+    /**
+     * 去首尾空格，将中间的空格换成 _  
+     * @param   $title 
+     * @return 
+     */
+    static public function reMakeTitle($title)
+    {
+        // 替换&nbsp;为空格，然后去首尾空格
+        $title = trim(preg_replace('~\x{00a0}~siu', ' ', $title));
+        return str_replace(" ", "_", $title); 
+    }
+    /**
+     * 判断音频文件是否存在
+     * @return boolean 
+     * @param string $type 类型 uk us
+     * @author panjie <panjie@yunzhiclub.com>
+     */
+    private function _isAudioFileExist($type)
+    {
+        if (is_file($this->_makeFilePath($type)))
+        {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    //获取本类对象所有释义
+    public function getExplains()
+    {
+        if ($this->explains === null)
+        {
+            $WordExplainM = new WordExplainModel();
+            $map = array();
+            $map['word_id'] = $this->getId();
+            $this->explains = $WordExplainM->where($map)->field("value")->select();
+            unset($WordExplainM);
+        }
+        return $this->explains;
+    }
+
+    //获取本类对象的扩展信息
+    public function getExtends()
+    {
+        if ($this->extends === null)
+        {
+            // 取缓存信息
+            $storeKey = __CLASS__ . '_' . __METHOD__ . '_' . $this->getId();
+            $this->extends = S($storeKey);
+
+            if (false === $this->extends)
+            {
+                $this->extends = array();
+                $WordWordNatureM = new WordWordNatureModel();
+                
+                $map = array();
+                $map['word_id'] = $this->getId();
+                $lists = group_by_key($WordWordNatureM->where($map)->select(), 'word_nature_id');
+                unset($WordWordNatureM);
+
+                $i = 0;
+                foreach ($lists as $key => $list)
+                {
+                    $this->extends[$i] = new \StdClass();
+                    $this->extends[$i]->WordNature = new WordNature($key);
+                    $this->extends[$i]->WordWordNatures = array();
+                    foreach ($list as $k => $v)
+                    {
+                        $this->extends[$i]->WordWordNatures[] = new WordWordNature($v['id']);
+                    }
+                    $i++;
+                }
+                unset($lists);
+                S($storeKey, $this->extends);
+            }
+        }
+        return $this->extends;
+    }
+
+    //获取本类对象难度星级
+    public function getStar()
+    {
+        return $this->star;
+    }
+
+    /**
+     * 获取单节
+     * @return string 
+     */
+    public function getSyllable()
+    {
+        return $this->syllable;
+    }
+
+    // 获取英式音标
+    public function getUkPhonetic()
+    {
+        return $this->ukPhonetic;
+    }
+
+    // 获取美式音标
+    public function getUsPhonetic()
+    {
+        return $this->usPhonetic;
+    }
+
+    // 例句
+    public function getExample()
+    {
+        return $this->example;
+    }
+
+    // 例句释义
+    public function getExampleTranslate()
+    {
+        return $this->exampleTranslate;
+    }
+
+    //获取本类对象的4个随机选项
+    public function getRandomQuestionWords()
+    {
+        if ($this->randomQuestionWords === null)
+        {
+            // 首先加入本单词做为正确答案出现
+            $this->randomQuestionWords[] = $this;
+
+            $Course = $this->getCourse();
+            //$words = $Course->getWords();
+            $wordIds = $Course->getWordIds();
+
+            //取   同一课程   中的随机四个单词
+            shuffle($wordIds); //乱序
+            $j = 0;
+            foreach ($wordIds as $key => &$id)
+            {
+                if ($id == $this->getId())
+                {
+                    continue;
+                } else {
+                    $this->randomQuestionWords[] = new Word($id);
+                    $j ++;
+                    if ($j == 3)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            unset($wordIds);
+            shuffle($this->randomQuestionWords);//乱序
+        }
+        
+        return $this->randomQuestionWords;//返回问题选项
+    }
+
+    public function getIsNewWord()
+    {
+        return (int)$this->isNewWord;
+    }
+
+    public function setIsNewWord($state = 0)
+    {
+        $this->isNewWord = (int)$state;
+        return $this;
+    }
+
+    /**
+     * 获取某学生在某门课程中学习过的单词
+     * @param object 学生类
+     * @param object 课程类
+     * @return array(Word)
+     */
+    static public function getAllLists(Student $Student, Course $Course)
+    {
+        $map['login__student_id'] = $Student->getId();
+        $map['word__course_id'] = $Course->getId();
+        $WordProgressLoginWordCourseViewL = new WordProgressLoginWordCourseViewLogic();
+        $words = $WordProgressLoginWordCourseViewL->where($map)->group("word_id")->select();
+        foreach ($words as $key => $value) {
+            $wordsLearned[] = new Word($value['word_id']);
+        }
+        return $wordsLearned;
+    }
+
+    /**
+     * 获取学生学习过的单词
+     * @param  Student $Student     学生
+     * @param  integer $page        第几页
+     * @param  integer $pageSize    一页多少条
+     * @param  integer  &$totalCount 总条数（返回）
+     * @param  string  $order       排序方法，默认按学习顺序 ， letter:字母序
+     * @return array               Word
+     * @author panjie
+     * 2016.06.07
+     */
+    static public function getPageStudiedWords(Student $Student, $page = 1 , $pageSize = 10, &$totalCount, $order = '')
+    {
+
+        if (!is_object($Student) ||  (get_class($Student) !== 'Home\Model\Student'))
+        {
+            E('传入的变量非学生对象');
+        }
+
+        // 初始化分页信息
+        $page = (int)$page > 0 ? (int)$page : 1;
+        $pageSize = (int)$pageSize > 1 ? (int)$pageSize : 10;
+        $WordProgressLoginWordCourseViewL = new WordProgressLoginWordCourseViewLogic();
+
+        // 设置查询条件
+        $map = array();
+        $map['login__student_id'] = $Student->getId();
+        $map['is_new'] = '1';
+
+        // 设置排序方法
+        if ($order === 'letter')
+        {
+            $order = 'word__title asc';
+        }
+        else
+        {
+            $order = 'time asc';
+        }
+        
+        // 记算总条数并获取数据
+        $totalCount = $WordProgressLoginWordCourseViewL->where($map)->count();
+        $lists = $WordProgressLoginWordCourseViewL->where($map)->order($order)->field('word_id')->page("$page, $pageSize")->select();
+
+        // 返回Word对象
+        $result = array();
+        foreach ($lists as $list)
+        {
+            $result[] = new Word($list['word_id']);
+        }
+        return $result;
+    }
+
+    /**
+     * 求剩余的单词数按不同排序返回结果
+     * 这个不考虑排序
+     * @param  Student $Student     学生
+     * @param  integer $page        当前页
+     * @param  integer $pageSize    每页多少条
+     * @param  integer  &$totalCount 总条数
+     * @param  string  $order       排序方式（示实现）
+     * @return array               Word
+     * @author panjie
+     * 2016.6.7
+     */
+    static public function getPageRemainingWords(Student $Student, $page = 1, $pageSize = 10, &$totalCount, $order = '')
+    {
+        if (!is_object($Student) ||  (get_class($Student) !== 'Home\Model\Student'))
+        {
+            E('传入的变量非学生对象');
+        }
+
+        // 初始化分页信息
+        $page = (int)$page > 0 ? (int)$page : 1;
+        $pageSize = (int)$pageSize > 1 ? (int)$pageSize : 10;
+
+        // 计算offset和最后的结点
+        $offset = ($page - 1) * $pageSize;
+        $end = $offset + $pageSize;
+
+        // 取出所有的课程，按分页信息取出本页数据
+        $Courses = $Student->getAllCourses();
+
+        $map = array();
+        $order = array('order'=>'asc', 'id'=>'asc');
+        $field = 'id';
+
+        // 按不同的页数，查找数据
+        $lists = array();
+        foreach ($Courses as &$Course)
+        {
+            // 取出学习了多少个，求出还有多少个没有，然后重置偏移量
+            $studiedCount = $Course->getNewStudyWordsCount($Student);
+            $totalCount += $Course->getWordCount() - $studiedCount;
+
+            // 查询当前课程
+            $map = $map['course_id'] = $Course->getId();
+            $offset += $studiedCount;
+
+            $WordM = new WordModel;
+            // 如果长度大于所取记录，则直接返回
+            if ($totalCount >= $end && $pageSize)
+            {
+                $lists = array_merge($lists, $WordM->field($field)->where($map)->limit($offset, $pageSize)->order($order)->select());
+                $pageSize = 0;
+            }
+            else if ($totalCount >= $offset && $pageSize)
+            {
+                $temPageSize = $length - $offset + 1;
+                $lists = array_merge($lists, $WordM->field($field)->where($map)->limit($offset, $temPageSize)->order($order)->select());
+                $pageSize -= $temPageSize;
+                $offset += $temPageSize;
+            }
+            $offset -= $studiedCount;
+        }
+
+        // 将结果整理为Word对象
+        $results = array();
+        foreach ($lists as $list)
+        {   
+            $results[] = new Word($list['id']);
+        }
+        return $results;
+    }
+    /**
+     * 获取 学生 所需要学的所有单词
+     * @param  Student $Student 学生
+     * @return array           Word
+     * @author panjie
+     */
+    static public function getAllWords(Student $Student)
+    {
+        $WordL = new WordLogic;
+        $result = array();
+        // 获取学生所有的课程。
+        foreach ($Student->getAllCourses() as $Course)
+        {
+            // 依次获取课程中的单词
+            $words = $WordL->field("id")->where('course_id=' . $Course->getId())->select();
+            foreach ($words as $word)
+            {
+                $result[] = new Word($word['id']);
+            }
+        }
+        return $result;
+    }
+
+    /**
+     * 获取学生还没有学习的单词
+     * @param  Student $Student 学生
+     * @return array           Word
+     * @author panjie <3792535@qq.com>
+     */ 
+    public function getRemainingWords(Student $Student)
+    {
+        $AllWords = Word::getAllWords($Student);
+        $studiedWords = Word::getStudiedWords($Student);
+
+        // 依次将学习过的单词进行KEY值的转换
+        $studiedLists = array();
+
+        foreach ($studiedWords as $Word)
+        {
+            $studiedLists[$Word->getId()] = $Word->getId();
+        }
+
+        foreach ($AllWords as $key => $Word)
+        {
+            if (isset($studiedLists[$Word->getId()]))
+            {
+                unset($AllWords[$key]);
+            }
+        }
+        unset($Word);
+        return $AllWords;
+    }
+    /**
+     * 对某个学生是否是生词
+     * @param object 学生类
+     * @return bool 是生词返回true ，不是 返回false
+     */
+    public function getIsNew(Student $Student)
+    {
+        $map['login__student_id'] =$Student->getId();
+        $map['word_id'] = $this->id;
+        $map['is_new'] = 0;
+        $WordProgressLoginWordCourseViewL = new WordProgressLoginWordCourseViewLogic();
+        $word = $WordProgressLoginWordCourseViewL->where($map)->find();
+        if($word === null)//若没找到该记录，则认为该单词为生词
+        {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 按单词名称进行查询
+     * @param  Student $Student 学生
+     * @param  [type]  $title   单词
+     * @return Word           
+     * @author panjie
+     */
+    static public function getLists(Student $Student, $title = "")
+    {
+        // 取出所有的单词
+        $WordL = new WordLogic();
+        $map = array();
+        $map['title'] = array("like", '%'. $title . '%');
+        $words = $WordL->field("id")->where($map)->select();
+        $result = array();
+        foreach ($words as $word)
+        {
+            $result[] = new Word($word['id']);
+        }
+        return $result;
+    }
+    /**
+     * 对某个学生的学习剩余次数
+     * @param object 学生类
+     * @return int 剩余次数
+     */
+    public function getRemainingTimes(Student $Student)
+    {
+        return 10;
+    }
+
+    /**
+     * 获取下一个学习顺序的单词
+     * @return Word 
+     * panjie
+     */
+    public function getNextWord()
+    {
+        if ($this->nextWord === null)
+        {
+            $this->nextWord = new Word($this->getNextId());
+        }
+        return $this->nextWord;
+    }
+
+    /**
+     * 获取学生当前页的所有单词信息
+     * @param  Student $Student  学生
+     * @param  integer $totalCount 总条数
+     * @param  integer $page     当前页
+     * @param  integer  $pageSize 每页多少条
+     * @param string $orderBy 排序方法 默认：按正常顺序排序，'letter':按字母序排序
+     * @return array            Word
+     */
+    static public function getPageWords(Student $Student, &$totalCount = 0,$page = 1, $pageSize = 10, $orderBy = '')
+    {
+        if (!is_object($Student) ||  (get_class($Student) !== 'Home\Model\Student'))
+        {
+            E('传入的变量非学生对象');
+        }
+
+        // 初始化分页信息
+        $page = (int)$page > 0 ? (int)$page : 1;
+        $pageSize = (int)$pageSize > 1 ? (int)$pageSize : 10;
+
+        // 计算offset和最后的结点
+        $offset = ($page - 1) * $pageSize;
+        $end = $offset + $pageSize;
+
+        // 取出所有的课程，按分页信息取出本页数据
+        $Courses = $Student->getAllCourses();
+        $WordM = new WordModel;
+
+        // 计算offset和最后的结点总条数
+        foreach ($Courses as &$Course)
+        {
+            $totalCount += $Course->getWordCount();
+        }
+        unset($Course);
+
+        // 定制查询条件
+        $length = 0;
+        $map = array();
+        if ($orderBy === "letter")
+        {
+            $order = array('title'=>'asc', 'id'=>'asc');
+        }
+        else
+        {
+            $order = array('order'=>'asc', 'id'=>'asc');
+        }
+        $field = 'id';
+
+        // 按不同的页数，查找数据
+        $lists = array();
+        foreach ($Courses as &$Course)
+        {
+            $length += $Course->getWordCount();
+            $map = array();
+            $map['course_id'] = $Course->getId();
+
+            // 如果长度大于所取记录，则直接返回
+            if ($length >= $end)
+            {
+                $lists = array_merge($lists, $WordM->field($field)->where($map)->limit($offset, $pageSize)->order($order)->select());
+                break;
+            }
+            else if ($length >= $offset)
+            {
+                $temPageSize = $length - $offset + 1;
+                $lists = array_merge($lists, $WordM->field($field)->where($map)->limit($offset, $temPageSize)->order($order)->select());
+                $pageSize -= $temPageSize;
+                $offset += $temPageSize;
+            }
+        }
+        unset($Course);
+
+        // 将结果整理为Word对象
+        $result = array();
+        foreach ($lists as $list)
+        {   
+            $result[] = new Word($list['id']);
+        }
+
+        return $result;
+    }
+
+    /**
+     * 判断所取的单词是不是新学
+     * type = 1（是新学）；type = 2（复习）；type = 3（复习且认对）
+     * @author xulinjie
+     * @return 1 or 2 or 3
+     */
+    public function isNewWord($Student)
+    {
+        //取点击记录表
+        $map = array();
+        $map['word_id'] = $this->getId();
+        $map['student_id'] = $Student->getId();
+        $StudentWordStudyListModel = new StudentWordStudyListModel;
+        $data = $StudentWordStudyListModel->where($map)->find();
+
+        //如果没找到这条记录，则认为该学生未学习过这个单词，是新学
+        if($data === null || ((int)$data['repeat_times'] === 0)){
+            return 1;
+
+        } else if ((int)$data['repeat_times'] < 3){
+
+            //复习返回2
+            return 2;
+        } else {
+            return 3;
+        }
+    }
+
+    /**
+     * 获取音频文件信息
+     * @return object
+     * @author panjie <panjie@yunzhiclub.com>
+     */
+    public function getAudios()
+    {
+        $object = new \StdClass;
+        $object->uk = new \StdClass;
+        $object->us = new \StdClass;
+        $object->uk->url = $this->getAudioUkUrl();                  // 英式读音链接
+        $object->us->url = $this->getAudioUsUrl();                  // 美式读音链接
+        $object->uk->fileExist = $this->_isAudioFileExist('uk');    // 是否存在英式读音
+        $object->us->fileExist = $this->_isAudioFileExist('us');    // 是否存在美式读音
+        return $object;
+    }
+
+    /**
+     * 获取 JSON数据，用于前台的调用
+     * @return object 
+     */
+    public function getJsonData()
+    {
+        $object                     = new \StdClass();
+        $object->id                 = $this->getId();
+        $object->title              = $this->getTitle();
+        $object->translation        = $this->getTranslation();
+        $object->explain            = $this->getTranslation();
+        $object->explains           = $this->getExplains();
+        $object->ukPhonetic         = $this->getUkPhonetic();
+        $object->usPhonetic         = $this->getUsPhonetic();
+        $object->example            = $this->getExample();
+        $object->exampleTranslate   = $this->getExampleTranslate();
+        $object->audioUkUrl         = $this->getAudioUkUrl();
+        $object->audioUsUrl         = $this->getAudioUsUrl();
+        $object->title              = $this->getTitle();
+        $object->star               = $this->getStar();
+        $object->imageUrl           = $this->getAttachment()->getUrl();
+        $object->index              = $this->getIndex();
+        $object->showExplain        = 0;
+        $object->showTitle          = 1;
+        $object->syllable           = $this->getSyllable();
+        $object->defaultWriteAnswer = '';                                   // 默认的听写答案
+        $object->randomQuestionWords = array();
+        $object->isNewWord          = $this->getIsNewWord();
+
+        $randomQuestionWords = $this->getRandomQuestionWords();
+        foreach ($randomQuestionWords as $Word)
+        {
+            $word = new \StdClass;
+            $word->id = $Word->getId();
+            $word->translation = $Word->getTranslation();
+            $object->randomQuestionWords[] = $word;
+            unset($word);
+        }
+        $object->extends            = $this->getExtends();
+        
+        return $object;
+    }
+}

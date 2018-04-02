@@ -1,0 +1,22 @@
+<?php
+namespace Admin\Model;
+/**
+ * 用户
+ * panjie
+ */
+use User\Logic\UserLogic;       // 用户
+
+class User
+{
+    private $id = 0;
+    private $UserL = null;      // 用户L
+    public function __construct($id = 0)
+    {
+        $this->id = (int)$id;
+    }
+
+    public function getId()
+    {
+        return $this->id;
+    }
+}

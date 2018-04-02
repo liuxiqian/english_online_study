@@ -1,0 +1,40 @@
+.logo
+{
+    margin-top:50px;
+    margin-bottom:0px;
+}
+.change{
+            background-image: linear-gradient(#E8F8F5, #BCEDE7 60%, #C0F2EC);
+    }
+.logo h2
+{
+    font-family: "楷体","微软雅黑","宋体";
+}
+.loading{
+    z-index: 1040;
+    opacity: 0.5;
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    background-color: #FFF;
+        }
+
+.ajax-loader {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    margin-left: -32px; /* -1 * image width / 2 */
+    margin-top: -32px;  /* -1 * image height / 2 */
+    display: block;
+    background-color: #000000;
+}
+
+.row2 {
+    background-color: rgba(180, 176, 19, 0.67);
+}
+
+.row4 {
+    background-color: rgba(154, 88, 1, 0.5);
+}

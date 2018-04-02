@@ -1,0 +1,12 @@
+<?php
+namespace UserDepartmentPostView\Model;
+
+use Yunzhi\Model\YunzhiModel;
+
+/**
+* 用户区域岗位视图
+*/
+class UserDepartmentPostViewModel extends YunzhiModel
+{
+    
+}
